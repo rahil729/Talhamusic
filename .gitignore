@@ -1,0 +1,31 @@
+# Android and Gradle
+.gradle/
+build/
+*/build/
+local.properties
+.externalNativeBuild/
+.cxx/
+
+# IDE
+.idea/
+*.iml
+
+# Kotlin/Java generated files
+**/generated/
+**/build/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# OS and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Local environment files
+.env
+.env.*
+!.env.example
