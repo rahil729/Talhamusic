@@ -27,7 +27,7 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug
+        run: bash ./gradlew :app:assembleDebug
 
       - name: Upload Talha Music APK
         uses: actions/upload-artifact@v4
