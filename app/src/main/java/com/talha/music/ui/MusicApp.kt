@@ -93,6 +93,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
 import coil.compose.AsyncImage
 import com.talha.music.data.model.Playlist
@@ -244,11 +245,14 @@ class MusicAppViewModel @Inject constructor(
     fun toggleShuffle() { playerConnection.toggleShuffle() }
     fun cycleRepeat() { playerConnection.cycleRepeatMode() }
 
-    private fun mediaItem(song: Song, url: String) = MediaItem.Builder()
-        .setMediaId(song.id)
-        .setUri(url)
-        .setMediaMetadata(MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist).setArtworkUri(song.thumbnailUrl?.let(android.net.Uri::parse)).build())
-        .build()
+    private fun mediaItem(song: Song, url: String): MediaItem {
+        val builder = MediaItem.Builder()
+            .setMediaId(song.id)
+            .setUri(url)
+            .setMediaMetadata(MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist).setArtworkUri(song.thumbnailUrl?.let(android.net.Uri::parse)).build())
+        if (url.startsWith("file:")) builder.setMimeType(MimeTypes.AUDIO_UNKNOWN)
+        return builder.build()
+    }
 }
 
 @Composable
