@@ -9,6 +9,7 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -17,37 +18,47 @@ class SongDownloadManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val httpClient: OkHttpClient
 ) {
+    private val activeDownloads = ConcurrentHashMap.newKeySet<String>()
+
     private val downloadDirectory by lazy {
         File(context.filesDir, "downloads_v2").apply { mkdirs() }
     }
 
-    suspend fun download(song: Song, streamUrl: String): Boolean = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(streamUrl).build()
-        val outputFile = fileFor(song.id)
-        val temporaryFile = File(outputFile.parentFile, "${outputFile.name}.part")
+    suspend fun download(song: Song, streamUrl: String): Boolean {
+        if (!activeDownloads.add(song.id)) return false
 
-        repeat(3) { attempt ->
-            val completed = runCatching {
-                temporaryFile.delete()
-                httpClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@runCatching false
-                    val body = response.body ?: return@runCatching false
-                    body.byteStream().use { input ->
-                        temporaryFile.outputStream().use { output -> input.copyTo(output) }
+        return try {
+            withContext(Dispatchers.IO) {
+                val request = Request.Builder().url(streamUrl).build()
+                val outputFile = fileFor(song.id)
+                val temporaryFile = File(outputFile.parentFile, "${outputFile.name}.part")
+
+                repeat(3) { attempt ->
+                    val completed = runCatching {
+                        temporaryFile.delete()
+                        httpClient.newCall(request).execute().use { response ->
+                            if (!response.isSuccessful) return@runCatching false
+                            val body = response.body ?: return@runCatching false
+                            body.byteStream().use { input ->
+                                temporaryFile.outputStream().use { output -> input.copyTo(output) }
+                            }
+                        }
+                        if (!temporaryFile.exists() || temporaryFile.length() == 0L) return@runCatching false
+                        outputFile.delete()
+                        temporaryFile.renameTo(outputFile)
                     }
+                        .getOrDefault(false)
+
+                    if (completed && outputFile.exists()) return@withContext true
+                    if (attempt < 2) Thread.sleep(500L)
                 }
-                if (!temporaryFile.exists() || temporaryFile.length() == 0L) return@runCatching false
-                outputFile.delete()
-                temporaryFile.renameTo(outputFile)
+
+                temporaryFile.delete()
+                false
             }
-                .getOrDefault(false)
-
-            if (completed && outputFile.exists()) return@withContext true
-            if (attempt < 2) Thread.sleep(500L)
+        } finally {
+            activeDownloads.remove(song.id)
         }
-
-        temporaryFile.delete()
-        false
     }
 
     fun localUri(songId: String): String? {

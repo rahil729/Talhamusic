@@ -35,7 +35,7 @@ class NewPipeExtractor @Inject constructor(
             getBackendAudioUrl(videoId) ?: runCatching {
                 initialize()
                 val extractor: StreamExtractor = NewPipe.getService("YouTube")
-                    .getStreamExtractor("https://www.youtube.com/shorts/$videoId")
+                    .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
                 extractor.fetchPage()
                 extractor.getAudioStreams()
                     .asSequence()

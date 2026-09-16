@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Context
 import androidx.media3.common.Player
 import androidx.media3.common.MediaItem
+import android.util.Log
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -60,6 +61,10 @@ class PlayerConnection @Inject constructor(
 
                 override fun onIsPlayingChanged(playing: Boolean) {
                     _isPlaying.value = playing
+                }
+
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    Log.e("PlayerConnection", "Playback failed", error)
                 }
 
                 override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
