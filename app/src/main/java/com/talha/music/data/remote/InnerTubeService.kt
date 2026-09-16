@@ -21,8 +21,10 @@ class InnerTubeService @Inject constructor(
     )
     
     suspend fun search(query: String, filter: String = "music_songs"): List<Song> {
-        val extractorResults = newPipeExtractor.searchSongs(query)
-        if (extractorResults.isNotEmpty()) return extractorResults
+        if (filter == "music_songs") {
+            val extractorResults = newPipeExtractor.searchSongs(query)
+            if (extractorResults.isNotEmpty()) return extractorResults
+        }
 
         return runCatching {
             pipedApi.search(query, filter).items.map { item ->

@@ -34,7 +34,6 @@ import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
@@ -47,7 +46,6 @@ import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.OpenInNew
-import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Explore
@@ -66,6 +64,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilledIconButton
@@ -106,6 +105,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import android.content.Intent
 import android.net.Uri
@@ -149,6 +149,7 @@ class MusicAppViewModel @Inject constructor(
     val searching = _searching.asStateFlow()
     private val _downloads = MutableStateFlow<List<Song>>(emptyList())
     val downloads = _downloads.asStateFlow()
+    private var searchJob: Job? = null
 
     init {
         viewModelScope.launch { playerConnection.pollPosition() }
@@ -174,13 +175,17 @@ class MusicAppViewModel @Inject constructor(
             _playlistResults.value = emptyList()
             return
         }
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _searching.value = true
-            _searchResults.value = repository.searchSongs(query)
-            _artistResults.value = repository.searchArtists(query)
-            _albumResults.value = repository.searchAlbums(query)
-            _playlistResults.value = repository.searchPlaylists(query)
-            _searching.value = false
+            try {
+                _searchResults.value = repository.searchSongs(query)
+                _artistResults.value = repository.searchArtists(query)
+                _albumResults.value = repository.searchAlbums(query)
+                _playlistResults.value = repository.searchPlaylists(query)
+            } finally {
+                _searching.value = false
+            }
         }
     }
 
@@ -201,7 +206,10 @@ class MusicAppViewModel @Inject constructor(
             player.prepare()
             player.play()
             repository.recordPlay(song)
-            launch { repository.downloadSong(song) }
+            launch {
+                repository.downloadSong(song)
+                refreshDownloads()
+            }
             val queued = queue.dropWhile { it.id != song.id }.drop(1).mapNotNull { next ->
                 repository.getPlaybackUri(next.id)?.let { mediaItem(next, it) }
             }
@@ -242,14 +250,19 @@ class MusicAppViewModel @Inject constructor(
             repository.addSongToPlaylist(playlist.id, song, position)
         }
     }
-    fun download(song: Song) { viewModelScope.launch { repository.downloadSong(song) } }
+    fun download(song: Song) {
+        viewModelScope.launch {
+            repository.downloadSong(song)
+            refreshDownloads()
+        }
+    }
     fun saveRemotePlaylist(name: String) {
         viewModelScope.launch { repository.createPlaylist(name) }
     }
     fun saveCollection(kind: String, name: String, song: Song) {
         viewModelScope.launch {
-            repository.createPlaylist("$kind: $name")
-            repository.toggleFavorite(song)
+            val playlistId = repository.createPlaylist("$kind: $name")
+            repository.addSongToPlaylist(playlistId, song, 0)
         }
     }
     fun toggleShuffle() { playerConnection.toggleShuffle() }
@@ -507,7 +520,6 @@ private fun FullPlayer(viewModel: MusicAppViewModel, onClose: () -> Unit) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "Close", tint = Color.White) }
                 Text("NOW PLAYING", color = Color(0xFF9FCFBB), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterVertically))
-                IconButton(onClick = {}) { Icon(Icons.Default.MoreVert, "More", tint = Color.White) }
             }
             Spacer(Modifier.height(42.dp))
             AsyncImage(model = item?.mediaMetadata?.artworkUri, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(28.dp)), contentScale = ContentScale.Crop)
@@ -516,7 +528,17 @@ private fun FullPlayer(viewModel: MusicAppViewModel, onClose: () -> Unit) {
                 Text(item?.mediaMetadata?.artist?.toString() ?: "", color = Color(0xFFA9B8B2), fontSize = 17.sp, modifier = Modifier.padding(top = 6.dp))
             }
             Spacer(Modifier.height(22.dp))
-            LinearProgressIndicator(progress = { if (duration > 0) position.toFloat() / duration else 0f }, modifier = Modifier.fillMaxWidth(), color = Color(0xFF9FCFBB), trackColor = Color(0xFF40534B))
+            Slider(
+                value = position.toFloat().coerceIn(0f, duration.toFloat().coerceAtLeast(1f)),
+                onValueChange = { viewModel.seek(it.toLong()) },
+                valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                modifier = Modifier.fillMaxWidth(),
+                colors = androidx.compose.material3.SliderDefaults.colors(
+                    thumbColor = Color(0xFF9FCFBB),
+                    activeTrackColor = Color(0xFF9FCFBB),
+                    inactiveTrackColor = Color(0xFF40534B)
+                )
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(formatTime(position), color = Color(0xFFA9B8B2)); Text(formatTime(duration), color = Color(0xFFA9B8B2)) }
             Spacer(Modifier.weight(1f))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
@@ -578,7 +600,6 @@ private fun SongActionsDialog(song: Song, viewModel: MusicAppViewModel, onDismis
                 item { ActionRow(Icons.Default.SkipNext, "Play next") { viewModel.playNext(song); onDismiss() } }
                 item { ActionRow(Icons.Default.QueueMusic, "Enqueue") { viewModel.enqueue(song); onDismiss() } }
                 item { ActionRow(Icons.Default.Radio, "Start radio") { viewModel.startRadio(song); onDismiss() } }
-                item { ActionRow(Icons.Default.PlaylistAdd, "Add to playlist") { } }
                 if (playlists.isEmpty()) {
                     item { Text("No playlists yet. Create one from Library.", color = AppMuted, modifier = Modifier.padding(start = 70.dp, top = 2.dp, bottom = 8.dp)) }
                 } else {
@@ -593,7 +614,6 @@ private fun SongActionsDialog(song: Song, viewModel: MusicAppViewModel, onDismis
                 item { ActionRow(Icons.Default.OpenInNew, "Watch on YouTube") { openExternal(context, "https://www.youtube.com/watch?v=${song.id}"); onDismiss() } }
                 item { ActionRow(Icons.Default.OpenInNew, "Open in YouTube Music") { openExternal(context, "https://music.youtube.com/watch?v=${song.id}"); onDismiss() } }
                 item { ActionRow(Icons.Default.Download, "Pre-cache") { viewModel.download(song); onDismiss() } }
-                item { ActionRow(Icons.Default.Block, "Add to blacklist") { onDismiss() } }
                 item { ActionRow(Icons.Default.Share, "Share") { shareSong(context, song); onDismiss() } }
             }
         }
@@ -723,7 +743,6 @@ private fun SettingRow(title: String, subtitle: String) {
             Text(title, fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = AppInk)
             Text(subtitle, fontSize = 13.sp, color = AppMuted, modifier = Modifier.padding(top = 3.dp))
         }
-        Icon(Icons.Default.MoreVert, contentDescription = "Open $title", tint = AppMuted)
     }
 }
 
