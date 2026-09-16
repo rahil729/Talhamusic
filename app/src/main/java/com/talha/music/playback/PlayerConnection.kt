@@ -10,6 +10,8 @@ import androidx.media3.session.SessionToken
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 import com.google.common.util.concurrent.ListenableFuture
@@ -47,6 +49,8 @@ class PlayerConnection @Inject constructor(
 
     private val _queue = MutableStateFlow<List<MediaItem>>(emptyList())
     val queue = _queue.asStateFlow()
+
+    suspend fun awaitPlayer(): Player? = _player.filterNotNull().first()
 
     init {
         val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))

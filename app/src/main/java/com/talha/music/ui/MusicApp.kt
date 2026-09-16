@@ -109,6 +109,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 private val AppBackground = Color(0xFFF7F5F2)
@@ -184,9 +186,17 @@ class MusicAppViewModel @Inject constructor(
 
     fun play(song: Song, queue: List<Song> = listOf(song)) {
         viewModelScope.launch {
-            val url = repository.getPlaybackUri(song.id) ?: return@launch
+            val url = repository.getPlaybackUri(song.id)
+            if (url == null) {
+                Log.e("MusicAppViewModel", "No playable stream found for ${song.id}")
+                return@launch
+            }
             val item = mediaItem(song, url)
-            val player = playerConnection.player.value ?: return@launch
+            val player = withTimeoutOrNull(10_000L) { playerConnection.awaitPlayer() }
+            if (player == null) {
+                Log.e("MusicAppViewModel", "Playback service did not connect")
+                return@launch
+            }
             player.setMediaItem(item)
             player.prepare()
             player.play()
