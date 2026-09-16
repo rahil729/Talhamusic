@@ -32,7 +32,7 @@ class NewPipeExtractor @Inject constructor(
 
     suspend fun getAudioUrl(videoId: String): String? {
         return withContext(Dispatchers.IO) {
-            getBackendAudioUrl(videoId) ?: runCatching {
+            runCatching {
                 initialize()
                 val extractor: StreamExtractor = NewPipe.getService("YouTube")
                     .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
@@ -49,7 +49,7 @@ class NewPipeExtractor @Inject constructor(
                     ?.getContent()
             }.onFailure {
                 Log.e("NewPipeExtractor", "YouTube extraction failed for $videoId", it)
-            }.getOrNull()
+            }.getOrNull() ?: getBackendAudioUrl(videoId)
         }
     }
 

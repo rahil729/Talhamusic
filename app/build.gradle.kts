@@ -14,8 +14,8 @@ android {
         applicationId = "com.talha.music"
         minSdk = 24
         targetSdk = 34
-        versionCode = 5
-        versionName = "1.2.0"
+        versionCode = 6
+        versionName = "1.2.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -35,7 +35,7 @@ android {
 
     buildTypes {
         debug {
-            buildConfigField("String", "STREAM_BACKEND_URL", "\"${project.findProperty("streamBackendUrl") ?: "http://10.0.2.2:8080"}\"")
+            buildConfigField("String", "STREAM_BACKEND_URL", "\"${project.findProperty("streamBackendUrl") ?: ""}\"")
             manifestPlaceholders["usesCleartextTraffic"] = true
         }
         release {
