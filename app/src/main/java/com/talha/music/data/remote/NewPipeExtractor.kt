@@ -19,6 +19,7 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import com.talha.music.data.model.Song
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -32,25 +33,33 @@ class NewPipeExtractor @Inject constructor(
 
     suspend fun getAudioUrl(videoId: String): String? {
         return withContext(Dispatchers.IO) {
-            runCatching {
-                initialize()
-                val extractor: StreamExtractor = NewPipe.getService("YouTube")
-                    .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
-                extractor.fetchPage()
-                extractor.getAudioStreams()
-                    .asSequence()
-                    .filter { it.getContent().isNotBlank() }
-                    .maxWithOrNull(
-                        compareBy(
-                            { it.getAverageBitrate() },
-                            { it.getContent().length }
-                        )
-                    )
-                    ?.getContent()
-            }.onFailure {
-                Log.e("NewPipeExtractor", "YouTube extraction failed for $videoId", it)
-            }.getOrNull() ?: getBackendAudioUrl(videoId)
+            repeat(3) { attempt ->
+                resolveAudioUrl(videoId)?.let { return@withContext it }
+                if (attempt < 2) delay(750L * (attempt + 1))
+            }
+            null
         }
+    }
+
+    private fun resolveAudioUrl(videoId: String): String? {
+        return runCatching {
+            initialize()
+            val extractor: StreamExtractor = NewPipe.getService("YouTube")
+                .getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
+            extractor.fetchPage()
+            extractor.getAudioStreams()
+                .asSequence()
+                .filter { it.getContent().isNotBlank() }
+                .maxWithOrNull(
+                    compareBy(
+                        { it.getAverageBitrate() },
+                        { it.getContent().length }
+                    )
+                )
+                ?.getContent()
+        }.onFailure {
+            Log.e("NewPipeExtractor", "YouTube extraction failed for $videoId", it)
+        }.getOrNull() ?: getBackendAudioUrl(videoId)
     }
 
     private fun getBackendAudioUrl(videoId: String): String? {

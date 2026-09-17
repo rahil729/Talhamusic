@@ -14,8 +14,8 @@ android {
         applicationId = "com.talha.music"
         minSdk = 24
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.2.1"
+        versionCode = 7
+        versionName = "1.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -88,7 +88,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
 
     // YouTube extraction fallback
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.23.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     testImplementation("junit:junit:4.13.2")
