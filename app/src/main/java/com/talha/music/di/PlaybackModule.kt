@@ -2,6 +2,7 @@ package com.talha.music.di
 
 import android.content.Context
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.ExoPlayer
@@ -28,7 +29,9 @@ object PlaybackModule {
             .setAllowCrossProtocolRedirects(true)
         val cacheDataSourceFactory = CacheDataSource.Factory()
             .setCache(cache)
-            .setUpstreamDataSourceFactory(httpDataSourceFactory)
+            .setUpstreamDataSourceFactory(
+                DefaultDataSource.Factory(context, httpDataSourceFactory)
+            )
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
 
         return ExoPlayer.Builder(context)

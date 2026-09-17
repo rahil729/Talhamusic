@@ -18,6 +18,6 @@ interface PipedApi {
     ): PipedStreamResponse
 
     companion object {
-        const val BASE_URL = "https://api.piped.privacydev.net/"
+        const val BASE_URL = "https://piped.video/"
     }
 }

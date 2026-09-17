@@ -33,11 +33,9 @@ class NewPipeExtractor @Inject constructor(
 
     suspend fun getAudioUrl(videoId: String): String? {
         return withContext(Dispatchers.IO) {
-            repeat(3) { attempt ->
-                resolveAudioUrl(videoId)?.let { return@withContext it }
-                if (attempt < 2) delay(750L * (attempt + 1))
-            }
-            null
+            resolveAudioUrl(videoId)
+                ?: resolveInnerTubeAudioUrl(videoId)
+                ?: getBackendAudioUrl(videoId)
         }
     }
 
@@ -59,7 +57,58 @@ class NewPipeExtractor @Inject constructor(
                 ?.getContent()
         }.onFailure {
             Log.e("NewPipeExtractor", "YouTube extraction failed for $videoId", it)
-        }.getOrNull() ?: getBackendAudioUrl(videoId)
+        }.getOrNull()
+    }
+
+    private fun resolveInnerTubeAudioUrl(videoId: String): String? {
+        val clients = listOf(
+            "ANDROID" to "20.10.38",
+            "WEB_REMIX" to "1.20260910.01.00"
+        )
+        for ((clientName, clientVersion) in clients) {
+            val requestBody = """
+                {
+                  "context": {
+                    "client": {
+                      "clientName": "$clientName",
+                      "clientVersion": "$clientVersion",
+                      "hl": "en",
+                      "gl": "US"
+                    }
+                  },
+                  "videoId": "$videoId"
+                }
+            """.trimIndent().toRequestBody("application/json".toMediaType())
+
+            runCatching {
+                val request = OkHttpRequest.Builder()
+                    .url("https://www.youtube.com/youtubei/v1/player?key=$YOUTUBE_INNERTUBE_KEY")
+                    .post(requestBody)
+                    .header("Origin", "https://www.youtube.com")
+                    .header("Referer", "https://www.youtube.com/")
+                    .build()
+                httpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use null
+                    val root = JsonParser.parseString(response.body?.string().orEmpty()).asJsonObject
+                    val streamingData = root.getAsJsonObject("streamingData") ?: return@use null
+                    val formats = mutableListOf<JsonObject>()
+                    listOf("adaptiveFormats", "formats").forEach { name ->
+                        streamingData.getAsJsonArray(name)?.forEach { item ->
+                            if (item.isJsonObject) formats += item.asJsonObject
+                        }
+                    }
+                    formats.asSequence()
+                        .filter { format ->
+                            format.getAsJsonPrimitive("url")?.asString?.isNotBlank() == true &&
+                                format.getAsJsonPrimitive("mimeType")?.asString?.startsWith("audio/") == true
+                        }
+                        .maxByOrNull { it.getAsJsonPrimitive("bitrate")?.asInt ?: 0 }
+                        ?.getAsJsonPrimitive("url")
+                        ?.asString
+                }
+            }.getOrNull()?.takeIf { it.isNotBlank() }?.let { return it }
+        }
+        return null
     }
 
     private fun getBackendAudioUrl(videoId: String): String? {
@@ -68,7 +117,9 @@ class NewPipeExtractor @Inject constructor(
             val request = OkHttpRequest.Builder()
                 .url("${BuildConfig.STREAM_BACKEND_URL.trimEnd('/')}/stream/$videoId")
                 .build()
-            httpClient.newCall(request).execute().use { response ->
+            httpClient.newCall(request).apply {
+                timeout().timeout(12, java.util.concurrent.TimeUnit.SECONDS)
+            }.execute().use { response ->
                 if (!response.isSuccessful) return null
                 JsonParser.parseString(response.body?.string().orEmpty())
                     .asJsonObject
@@ -76,7 +127,7 @@ class NewPipeExtractor @Inject constructor(
                     ?.asString
             }
         }.onFailure {
-            Log.d("NewPipeExtractor", "Local stream backend unavailable", it)
+            Log.e("NewPipeExtractor", "Stream backend unavailable; check computer network and backend", it)
         }.getOrNull()
     }
 

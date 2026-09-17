@@ -191,29 +191,37 @@ class MusicAppViewModel @Inject constructor(
 
     fun play(song: Song, queue: List<Song> = listOf(song)) {
         viewModelScope.launch {
-            val url = repository.getPlaybackUri(song.id)
-            if (url == null) {
-                Log.e("MusicAppViewModel", "No playable stream found for ${song.id}")
-                return@launch
+            try {
+                val url = repository.getPlaybackUri(song.id)
+                if (url == null) {
+                    Log.e("MusicAppViewModel", "No playable stream found for ${song.id}")
+                    return@launch
+                }
+
+                val item = mediaItem(song, url)
+                val player = withTimeoutOrNull(10_000L) { playerConnection.awaitPlayer() }
+                if (player == null) {
+                    Log.e("MusicAppViewModel", "Playback service did not connect")
+                    return@launch
+                }
+
+                player.setMediaItem(item)
+                player.prepare()
+                player.play()
+
+                repository.recordPlay(song)
+                launch {
+                    repository.downloadSong(song)
+                    refreshDownloads()
+                }
+
+                val queued = queue.dropWhile { it.id != song.id }.drop(1).mapNotNull { next ->
+                    repository.getPlaybackUri(next.id)?.let { mediaItem(next, it) }
+                }
+                if (queued.isNotEmpty()) player.addMediaItems(queued)
+            } catch (error: Throwable) {
+                Log.e("MusicAppViewModel", "Playback tap failed for ${song.id}", error)
             }
-            val item = mediaItem(song, url)
-            val player = withTimeoutOrNull(10_000L) { playerConnection.awaitPlayer() }
-            if (player == null) {
-                Log.e("MusicAppViewModel", "Playback service did not connect")
-                return@launch
-            }
-            player.setMediaItem(item)
-            player.prepare()
-            player.play()
-            repository.recordPlay(song)
-            launch {
-                repository.downloadSong(song)
-                refreshDownloads()
-            }
-            val queued = queue.dropWhile { it.id != song.id }.drop(1).mapNotNull { next ->
-                repository.getPlaybackUri(next.id)?.let { mediaItem(next, it) }
-            }
-            if (queued.isNotEmpty()) player.addMediaItems(queued)
         }
     }
 

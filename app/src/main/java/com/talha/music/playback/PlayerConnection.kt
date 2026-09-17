@@ -2,9 +2,11 @@ package com.talha.music.playback
 
 import android.content.ComponentName
 import android.content.Context
-import androidx.media3.common.Player
-import androidx.media3.common.MediaItem
+import android.content.Intent
 import android.util.Log
+import androidx.core.content.ContextCompat
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -50,48 +52,69 @@ class PlayerConnection @Inject constructor(
     private val _queue = MutableStateFlow<List<MediaItem>>(emptyList())
     val queue = _queue.asStateFlow()
 
-    suspend fun awaitPlayer(): Player? = _player.filterNotNull().first()
+    suspend fun awaitPlayer(): Player? {
+        ensureServiceStarted()
+        if (_player.value == null) connectController()
+        return _player.filterNotNull().first()
+    }
 
     init {
-        val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        controllerFuture = MediaController.Builder(context, sessionToken).buildAsync()
-        controllerFuture?.addListener({
-            val controller = controllerFuture?.get()
-            _player.value = controller
-            controller?.addListener(object : Player.Listener {
-                init {
-                    updateQueue(controller)
-                }
+    }
 
-                override fun onIsPlayingChanged(playing: Boolean) {
-                    _isPlaying.value = playing
-                }
+    private fun connectController() {
+        if (controllerFuture != null) return
+        runCatching {
+            val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
+            val future = MediaController.Builder(context, sessionToken).buildAsync()
+            controllerFuture = future
 
-                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                    Log.e("PlayerConnection", "Playback failed", error)
-                }
+            future.addListener({
+                runCatching {
+                    val controller = future.get()
+                    _player.value = controller
+                    controller?.addListener(object : Player.Listener {
+                        init {
+                            updateQueue(controller)
+                        }
 
-                override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-                    _shuffleEnabled.value = shuffleModeEnabled
-                }
+                        override fun onIsPlayingChanged(playing: Boolean) {
+                            _isPlaying.value = playing
+                        }
 
-                override fun onRepeatModeChanged(repeatMode: Int) {
-                    _repeatMode.value = repeatMode
-                }
+                        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                            Log.e("PlayerConnection", "Playback failed", error)
+                        }
 
-                override fun onPlaybackStateChanged(state: Int) {
-                    _duration.value = controller.duration.coerceAtLeast(0L)
-                }
-                override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
-                    _duration.value = controller.duration.coerceAtLeast(0L)
-                    updateQueue(controller)
-                }
+                        override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+                            _shuffleEnabled.value = shuffleModeEnabled
+                        }
 
-                override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                    updateQueue(controller)
+                        override fun onRepeatModeChanged(repeatMode: Int) {
+                            _repeatMode.value = repeatMode
+                        }
+
+                        override fun onPlaybackStateChanged(state: Int) {
+                            _duration.value = controller.duration.coerceAtLeast(0L)
+                        }
+
+                        override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
+                            _duration.value = controller.duration.coerceAtLeast(0L)
+                            updateQueue(controller)
+                        }
+
+                        override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                            updateQueue(controller)
+                        }
+                    })
+                }.onFailure {
+                    Log.e("PlayerConnection", "Failed to attach media controller", it)
+                    _player.value = null
                 }
-            })
-        }, MoreExecutors.directExecutor())
+            }, MoreExecutors.directExecutor())
+        }.onFailure {
+            Log.e("PlayerConnection", "Controller startup failed", it)
+            _player.value = null
+        }
     }
 
     suspend fun pollPosition() {
@@ -150,6 +173,16 @@ class PlayerConnection @Inject constructor(
 
     private fun updateQueue(player: Player) {
         _queue.value = (0 until player.mediaItemCount).map { index -> player.getMediaItemAt(index) }
+    }
+
+    private fun ensureServiceStarted() {
+        val intent = Intent(context, PlaybackService::class.java)
+        runCatching {
+            ContextCompat.startForegroundService(context, intent)
+        }.onFailure {
+            Log.w("PlayerConnection", "Foreground service start failed, falling back to regular start", it)
+            runCatching { context.startService(intent) }
+        }
     }
 
     fun release() {

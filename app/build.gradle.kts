@@ -88,7 +88,7 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
 
     // YouTube extraction fallback
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.23.1")
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     testImplementation("junit:junit:4.13.2")
