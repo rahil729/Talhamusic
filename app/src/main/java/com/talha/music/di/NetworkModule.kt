@@ -2,6 +2,8 @@ package com.talha.music.di
 
 import com.talha.music.data.remote.PipedApi
 import com.talha.music.data.remote.LyricsApi
+import com.talha.music.data.remote.YouTubeApi
+import com.talha.music.data.remote.AudiusApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -56,5 +58,27 @@ object NetworkModule {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(LyricsApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideYouTubeApi(okHttpClient: OkHttpClient): YouTubeApi {
+        return Retrofit.Builder()
+            .baseUrl(YouTubeApi.BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(YouTubeApi::class.java)
+    }
+
+    @Provides
+    @Singleton
+    fun provideAudiusApi(okHttpClient: OkHttpClient): AudiusApi {
+        return Retrofit.Builder()
+            .baseUrl(AudiusApi.BASE_URL)
+            .client(okHttpClient)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(AudiusApi::class.java)
     }
 }

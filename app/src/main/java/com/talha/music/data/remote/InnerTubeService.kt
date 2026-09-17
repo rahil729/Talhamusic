@@ -14,6 +14,8 @@ import javax.inject.Singleton
 @Singleton
 class InnerTubeService @Inject constructor(
     private val pipedApi: PipedApi,
+    private val youtubeApi: YouTubeApi,
+    private val audiusApi: AudiusApi,
     private val newPipeExtractor: NewPipeExtractor,
     private val okHttpClient: OkHttpClient
 ) {
@@ -25,10 +27,10 @@ class InnerTubeService @Inject constructor(
     )
     
     suspend fun search(query: String, filter: String = "music_songs"): List<Song> {
-        if (filter == "music_songs") {
-            val extractorResults = newPipeExtractor.searchSongs(query)
-            if (extractorResults.isNotEmpty()) return extractorResults
-        }
+        val audiusResults = runCatching { searchAudius(query) }
+            .onFailure { Log.w("InnerTubeService", "Audius search failed", it) }
+            .getOrDefault(emptyList())
+        if (audiusResults.isNotEmpty()) return audiusResults
 
         return runCatching {
             searchViaFallback(query, filter)
@@ -49,12 +51,85 @@ class InnerTubeService @Inject constructor(
     }
 
     suspend fun getStreamUrl(songId: String): String? {
-        return newPipeExtractor.getAudioUrl(songId)
-            ?: runCatching {
-                fetchStreamUrlViaFallback(songId)
-            }.onFailure {
-                Log.e("InnerTubeService", "Failed to get fallback stream URL for: $songId", it)
-            }.getOrNull()
+        Log.d("InnerTubeService", "Fetching stream URL for: $songId")
+
+        if (songId.startsWith(AUDIUS_ID_PREFIX)) {
+            return "${AudiusApi.BASE_URL}v1/tracks/${songId.removePrefix(AUDIUS_ID_PREFIX)}/stream?app_name=${AudiusApi.APP_NAME}"
+        }
+        
+        // 1. Try NewPipeExtractor
+        val newPipeUrl: String? = newPipeExtractor.getAudioUrl(songId)
+        if (newPipeUrl != null) {
+            Log.d("InnerTubeService", "Stream URL resolved via NewPipeExtractor")
+            return newPipeUrl
+        }
+        
+        // 2. Try Piped fallbacks
+        val pipedUrl = runCatching {
+            fetchStreamUrlViaFallback(songId)
+        }.onFailure {
+            Log.w("InnerTubeService", "Piped fallback failed for: $songId", it)
+        }.getOrNull()
+        
+        if (pipedUrl != null) {
+            Log.d("InnerTubeService", "Stream URL resolved via Piped fallback")
+            return pipedUrl
+        }
+
+        // 3. Try direct YouTube for legacy YouTube IDs.
+        val youtubeUrl = runCatching {
+            fetchStreamUrlViaYouTube(songId)
+        }.onFailure {
+            Log.e("InnerTubeService", "Direct YouTube fallback failed for: $songId", it)
+        }.getOrNull()
+        
+        if (youtubeUrl != null) {
+            Log.d("InnerTubeService", "Stream URL resolved via direct YouTube")
+            return youtubeUrl
+        }
+
+        Log.e("InnerTubeService", "All sources failed to resolve stream URL for: $songId")
+        return null
+    }
+
+    private suspend fun fetchStreamUrlViaYouTube(songId: String): String? {
+        val request = YouTubePlayerRequest(
+            context = YouTubeContext(
+                client = YouTubeClient(
+                    clientName = "WEB_REMIX",
+                    clientVersion = "1.20240910.01.00",
+                    visitorData = "Cgtud1BfbG5sandFRSjh", // Example visitor data, ideally should be dynamic
+                    userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+            ),
+            videoId = songId,
+        )
+        val response = youtubeApi.getPlayer(request)
+        val formats = response.streamingData?.adaptiveFormats
+        
+        if (formats.isNullOrEmpty()) {
+            Log.w("InnerTubeService", "YouTube player response has no streaming data or formats for: $songId")
+            return null
+        }
+        
+        return formats
+            .filter { it.mimeType.contains("audio") }
+            .maxByOrNull { it.bitrate }
+            ?.url
+    }
+
+    private suspend fun searchAudius(query: String): List<Song> {
+        return audiusApi.searchTracks(query).data.mapNotNull { track ->
+            if (track.id.isBlank() || track.title.isBlank()) return@mapNotNull null
+            Song(
+                id = AUDIUS_ID_PREFIX + track.id,
+                title = track.title,
+                artist = track.user?.name ?: "Audius artist",
+                album = null,
+                durationText = track.duration.takeIf { it > 0 }?.let(::formatDuration),
+                thumbnailUrl = track.artwork?.`480x480` ?: track.artwork?.`150x150`
+            )
+        }
     }
 
     suspend fun getStreamDetails(songId: String): PipedStreamResponse? {
@@ -148,11 +223,15 @@ class InnerTubeService @Inject constructor(
     }
 
     companion object {
+        private const val AUDIUS_ID_PREFIX = "audius_"
         private val pipedHostCandidates = listOf(
-            "https://piped.video/",
             "https://pipedapi.kavin.rocks/",
+            "https://api.piped.privacydev.net/",
             "https://piped-api.lunar.icu/",
-            "https://pipedapi-libre.kavin.rocks/"
+            "https://pipedapi.tokhmi.xyz/",
+            "https://api.piped.projectsegfau.lt/",
+            "https://pipedapi.colivier.nl/",
+            "https://api-piped.mha.fi/"
         )
     }
 }
