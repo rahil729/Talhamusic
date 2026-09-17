@@ -13,6 +13,16 @@ app.add_middleware(
     allow_headers=["GET"],
 )
 
+@app.get("/")
+def root() -> dict[str, str]:
+    return {
+        "name": "Talha Music Stream Resolver",
+        "status": "online",
+        "health": "/health",
+        "stream": "/stream/{video_id}",
+    }
+
+
 CACHE_TTL_SECONDS = 300
 VIDEO_ID_LENGTH = 11
 cache: dict[str, tuple[float, dict]] = {}
