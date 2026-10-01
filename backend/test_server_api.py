@@ -2,7 +2,7 @@ import unittest
 
 from fastapi.testclient import TestClient
 
-from backend.server import app
+from backend.server import app, resolve_stream
 
 
 class SearchApiCompatibilityTests(unittest.TestCase):
@@ -32,6 +32,12 @@ class SearchApiCompatibilityTests(unittest.TestCase):
         allow_headers = response.headers.get('access-control-allow-headers', '').lower()
         self.assertIn('authorization', allow_headers)
         self.assertIn('user-agent', allow_headers)
+
+    def test_stream_resolution_returns_audio_url_for_playable_track(self):
+        result = resolve_stream('Kx7B-XvmFtE')
+        self.assertEqual(result['videoId'], 'Kx7B-XvmFtE')
+        self.assertIn('audio/', result['mimeType'])
+        self.assertTrue(result['url'].startswith('https://'))
 
 
 if __name__ == '__main__':

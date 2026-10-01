@@ -1,11 +1,13 @@
 from threading import Lock
 from time import monotonic
 import re
+from urllib.parse import parse_qs, urlparse
+
+import httpx
 import uvicorn
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
-from yt_dlp import YoutubeDL
 from ytmusicapi import YTMusic
 
 app = FastAPI(title="Talha Music Stream Resolver")
@@ -32,50 +34,94 @@ def root() -> dict[str, str]:
 CACHE_TTL_SECONDS = 300
 VIDEO_ID_LENGTH = 11
 VIDEO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
+YOUTUBE_INNERTUBE_KEY = "AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8"
 cache: dict[str, tuple[float, dict]] = {}
 locks: dict[str, Lock] = {}
 cache_lock = Lock()
 music_client = YTMusic()
 
-CLIENT_PROFILES = (
-    {"player_client": ["android"]},
-    {"player_client": ["web"]},
-    {"player_client": ["tv"]},
-)
+
+def youtube_player_info(video_id: str) -> dict:
+    payload = {
+        "context": {
+            "client": {
+                "clientName": "ANDROID",
+                "clientVersion": "20.10.38",
+                "hl": "en",
+                "gl": "US",
+            }
+        },
+        "videoId": video_id,
+    }
+    response = httpx.post(
+        f"https://www.youtube.com/youtubei/v1/player?key={YOUTUBE_INNERTUBE_KEY}",
+        json=payload,
+        headers={
+            "Origin": "https://www.youtube.com",
+            "Referer": "https://www.youtube.com/",
+            "User-Agent": "Mozilla/5.0",
+        },
+        timeout=20,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def is_video_playable(video_id: str) -> bool:
+    try:
+        info = youtube_player_info(video_id)
+    except Exception:
+        return False
+    status = (info.get("playabilityStatus") or {}).get("status")
+    return status == "OK"
+
+
+def decode_cipher_url(cipher_url: str) -> str:
+    parsed = urlparse(cipher_url)
+    query = parse_qs(parsed.query)
+    encrypted = query.get("s", [None])[0]
+    if encrypted:
+        return f"{parsed.scheme}://{parsed.netloc}{parsed.path}?{parsed.query}"
+    return cipher_url
 
 
 def resolve_stream(video_id: str) -> dict:
-    errors: list[str] = []
-    for extractor_args in CLIENT_PROFILES:
-        options = {
-            "quiet": True,
-            "no_warnings": True,
-            "noplaylist": True,
-            "skip_download": True,
-            "format": "bestaudio/best",
-            "socket_timeout": 10,
-            "retries": 0,
-            "extractor_args": {"youtube": extractor_args},
-        }
-        try:
-            with YoutubeDL(options) as downloader:
-                info = downloader.extract_info(
-                    f"https://www.youtube.com/watch?v={video_id}",
-                    download=False,
-                )
-            url = info.get("url")
-            if url:
-                return {
-                    "videoId": video_id,
-                    "title": info.get("title"),
-                    "url": url,
-                    "mimeType": info.get("mime_type"),
-                    "duration": info.get("duration"),
-                }
-            errors.append(f"{extractor_args['player_client'][0]} returned no URL")
-        except Exception as error:
-            errors.append(f"{extractor_args['player_client'][0]}: {error}")
-    raise RuntimeError("; ".join(errors)[-1000:])
+    info = youtube_player_info(video_id)
+    status = (info.get("playabilityStatus") or {}).get("status")
+    if status != "OK":
+        raise RuntimeError(f"Video is not playable: {status}")
+
+    video_details = info.get("videoDetails") or {}
+    formats = (info.get("streamingData") or {}).get("adaptiveFormats") or []
+    audio_streams = [
+        item for item in formats
+        if (item.get("mimeType") or "").startswith("audio/")
+    ]
+    if not audio_streams:
+        raise RuntimeError("No playable audio stream found for this video")
+
+    best = max(audio_streams, key=lambda item: (item.get("bitrate") or 0, item.get("approxDurationMs") or 0))
+    direct_url = best.get("url") or best.get("signatureCipher")
+    if not direct_url:
+        raise RuntimeError("No streaming URL returned by YouTube")
+
+    if best.get("url"):
+        url = best["url"]
+    else:
+        cipher_data = parse_qs(best["signatureCipher"])
+        cipher_url = cipher_data.get("url", [None])[0]
+        signature = cipher_data.get("sig", [None])[0] or cipher_data.get("s", [None])[0]
+        if not cipher_url:
+            raise RuntimeError("Unable to decode YouTube signature cipher")
+        url = f"{cipher_url}&sig={signature}" if signature else cipher_url
+
+    return {
+        "videoId": video_id,
+        "title": video_details.get("title"),
+        "url": url,
+        "mimeType": best.get("mimeType"),
+        "duration": int((video_details.get("lengthSeconds") or 0)),
+    }
 
 
 @app.get("/health")
@@ -96,6 +142,8 @@ def search(query: str = Query(min_length=1, max_length=200), limit: int = Query(
         video_id = entry.get("videoId") or ""
         title = entry.get("title") or ""
         if not VIDEO_ID_PATTERN.fullmatch(video_id) or not title:
+            continue
+        if not is_video_playable(video_id):
             continue
 
         artists = entry.get("artists") or []
