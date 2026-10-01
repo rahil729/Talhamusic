@@ -1,9 +1,9 @@
 package com.talha.music.di
 
-import com.talha.music.data.remote.PipedApi
+import com.talha.music.BuildConfig
 import com.talha.music.data.remote.LyricsApi
-import com.talha.music.data.remote.YouTubeApi
 import com.talha.music.data.remote.AudiusApi
+import com.talha.music.data.remote.YtDlpApi
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -40,17 +40,6 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun providePipedApi(okHttpClient: OkHttpClient): PipedApi {
-        return Retrofit.Builder()
-            .baseUrl(PipedApi.BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(PipedApi::class.java)
-    }
-
-    @Provides
-    @Singleton
     fun provideLyricsApi(okHttpClient: OkHttpClient): LyricsApi {
         return Retrofit.Builder()
             .baseUrl(LyricsApi.BASE_URL)
@@ -58,17 +47,6 @@ object NetworkModule {
             .addConverterFactory(GsonConverterFactory.create())
             .build()
             .create(LyricsApi::class.java)
-    }
-
-    @Provides
-    @Singleton
-    fun provideYouTubeApi(okHttpClient: OkHttpClient): YouTubeApi {
-        return Retrofit.Builder()
-            .baseUrl(YouTubeApi.BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-            .create(YouTubeApi::class.java)
     }
 
     @Provides
@@ -81,4 +59,16 @@ object NetworkModule {
             .build()
             .create(AudiusApi::class.java)
     }
+
+    @Provides
+    @Singleton
+    fun provideYtDlpApi(okHttpClient: OkHttpClient): YtDlpApi {
+        return Retrofit.Builder()
+            .baseUrl(BuildConfig.STREAM_BACKEND_URL)
+            .client(okHttpClient.newBuilder().readTimeout(120, TimeUnit.SECONDS).build())
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(YtDlpApi::class.java)
+    }
+
 }

@@ -6,16 +6,32 @@ plugins {
     kotlin("kapt")
 }
 
+val streamBackendUrl = providers.gradleProperty("streamBackendUrl")
+    .orElse("https://talhamusic.onrender.com/")
+    .get()
+    .let { if (it.endsWith('/')) it else "$it/" }
+val releaseKeystoreFile = providers.environmentVariable("ANDROID_KEYSTORE_FILE").orNull
+val releaseKeystorePassword = providers.environmentVariable("ANDROID_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("ANDROID_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("ANDROID_KEY_PASSWORD").orNull
+val hasReleaseSigning = listOf(
+    releaseKeystoreFile,
+    releaseKeystorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.talha.music"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.talha.music"
         minSdk = 24
-        targetSdk = 34
-        versionCode = 7
-        versionName = "1.2.2"
+        targetSdk = 36
+        versionCode = 8
+        versionName = "1.3.0"
+        buildConfigField("String", "STREAM_BACKEND_URL", "\"$streamBackendUrl\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -33,14 +49,26 @@ android {
         buildConfig = true
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseKeystoreFile!!)
+                storePassword = releaseKeystorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         debug {
-            buildConfigField("String", "STREAM_BACKEND_URL", "\"${project.findProperty("streamBackendUrl") ?: ""}\"")
             manifestPlaceholders["usesCleartextTraffic"] = true
         }
         release {
             isMinifyEnabled = false
-            buildConfigField("String", "STREAM_BACKEND_URL", "\"${project.findProperty("streamBackendUrl") ?: ""}\"")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             manifestPlaceholders["usesCleartextTraffic"] = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
@@ -87,8 +115,6 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.datastore.preferences)
 
-    // YouTube extraction fallback
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 
     testImplementation("junit:junit:4.13.2")

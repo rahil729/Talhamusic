@@ -17,10 +17,7 @@ interface AudiusApi {
     }
 }
 
-data class AudiusSearchResponse(
-    val data: List<AudiusTrack> = emptyList()
-)
-
+data class AudiusSearchResponse(val data: List<AudiusTrack> = emptyList())
 data class AudiusTrack(
     val id: String = "",
     val title: String = "",
@@ -28,11 +25,7 @@ data class AudiusTrack(
     val user: AudiusUser? = null,
     val artwork: AudiusArtwork? = null
 )
-
-data class AudiusUser(
-    val name: String = "Audius artist"
-)
-
+data class AudiusUser(val name: String = "Audius artist")
 data class AudiusArtwork(
     val `150x150`: String? = null,
     val `480x480`: String? = null

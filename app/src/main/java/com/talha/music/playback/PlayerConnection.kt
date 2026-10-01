@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -39,6 +40,12 @@ class PlayerConnection @Inject constructor(
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying = _isPlaying.asStateFlow()
+
+    private val _isBuffering = MutableStateFlow(false)
+    val isBuffering = _isBuffering.asStateFlow()
+
+    private val _canGoNext = MutableStateFlow(false)
+    val canGoNext = _canGoNext.asStateFlow()
 
     private val _shuffleEnabled = MutableStateFlow(false)
     val shuffleEnabled = _shuffleEnabled.asStateFlow()
@@ -87,14 +94,17 @@ class PlayerConnection @Inject constructor(
 
                         override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                             _shuffleEnabled.value = shuffleModeEnabled
+                            updateQueue(controller)
                         }
 
                         override fun onRepeatModeChanged(repeatMode: Int) {
                             _repeatMode.value = repeatMode
+                            updateQueue(controller)
                         }
 
                         override fun onPlaybackStateChanged(state: Int) {
                             _duration.value = controller.duration.coerceAtLeast(0L)
+                            _isBuffering.value = state == Player.STATE_BUFFERING
                         }
 
                         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) {
@@ -133,6 +143,19 @@ class PlayerConnection @Inject constructor(
         _player.value?.seekTo(position)
     }
 
+    fun stop() {
+        _player.value?.let { player ->
+            player.stop()
+            player.clearMediaItems()
+        }
+        _currentPosition.value = 0L
+        _duration.value = 0L
+        _isPlaying.value = false
+        _isBuffering.value = false
+        _queue.value = emptyList()
+        _canGoNext.value = false
+    }
+
     fun toggleShuffle() {
         _player.value?.let { player ->
             player.shuffleModeEnabled = !player.shuffleModeEnabled
@@ -163,7 +186,10 @@ class PlayerConnection @Inject constructor(
     }
 
     fun playQueueItem(index: Int) {
-        _player.value?.seekToDefaultPosition(index)
+        _player.value?.let { player ->
+            player.seekToDefaultPosition(index)
+            player.play()
+        }
     }
 
     fun removeQueueItem(index: Int) {
@@ -173,6 +199,7 @@ class PlayerConnection @Inject constructor(
 
     private fun updateQueue(player: Player) {
         _queue.value = (0 until player.mediaItemCount).map { index -> player.getMediaItemAt(index) }
+        _canGoNext.value = player.nextMediaItemIndex != C.INDEX_UNSET || player.repeatMode == Player.REPEAT_MODE_ALL
     }
 
     private fun ensureServiceStarted() {

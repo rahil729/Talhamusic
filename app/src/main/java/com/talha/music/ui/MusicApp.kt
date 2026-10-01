@@ -5,6 +5,7 @@ package com.talha.music.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,8 +23,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.ArrowBack
@@ -32,6 +36,13 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRowDefaults
+import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Pause
@@ -47,24 +58,32 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
-import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilledIconButton
@@ -83,6 +102,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -94,6 +114,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.Player
+import androidx.media3.common.C
 import coil.compose.AsyncImage
 import com.talha.music.data.model.Playlist
 import com.talha.music.data.model.Song
@@ -106,6 +127,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import android.content.Intent
 import android.net.Uri
@@ -113,11 +135,11 @@ import android.util.Log
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
-private val AppBackground = Color(0xFFF7F5F2)
-private val AppInk = Color(0xFF1D1D21)
-private val AppMuted = Color(0xFF77747C)
-private val AppAccent = Color(0xFF2D6A5A)
-private val AppSoft = Color(0xFFE4EEE8)
+private val AppBackground = Color(0xFF000000)
+private val AppInk = Color(0xFFFFFFFF)
+private val AppMuted = Color(0xFF8E8E8E)
+private val AppAccent = Color(0xFFFFFFFF)
+private val AppSoft = Color(0xFF1C1C1C)
 
 private enum class AppSection(val label: String) {
     DISCOVER("Discover"), SONGS("Songs"), SEARCH("Search"), LIBRARY("Library")
@@ -132,11 +154,16 @@ class MusicAppViewModel @Inject constructor(
     val favorites = repository.getFavoriteSongs().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val recent = repository.getRecentlyPlayed().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val playlists = repository.getPlaylists().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val searchHistory = repository.getSearchHistory().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val player = playerConnection.player
     val playing = playerConnection.isPlaying
+    val buffering = playerConnection.isBuffering
+    val canGoNext = playerConnection.canGoNext
+    val queue = playerConnection.queue
     val position = playerConnection.currentPosition
     val duration = playerConnection.duration
     val shuffle = playerConnection.shuffleEnabled
+    val repeatMode = playerConnection.repeatMode
     private val _searchResults = MutableStateFlow<List<Song>>(emptyList())
     val searchResults = _searchResults.asStateFlow()
     private val _artistResults = MutableStateFlow<List<Song>>(emptyList())
@@ -147,13 +174,34 @@ class MusicAppViewModel @Inject constructor(
     val playlistResults = _playlistResults.asStateFlow()
     private val _searching = MutableStateFlow(false)
     val searching = _searching.asStateFlow()
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError = _searchError.asStateFlow()
     private val _downloads = MutableStateFlow<List<Song>>(emptyList())
     val downloads = _downloads.asStateFlow()
+    
+    private val _trending = MutableStateFlow<List<Song>>(emptyList())
+    val trending = _trending.asStateFlow()
+    
+    private val _newReleases = MutableStateFlow<List<Song>>(emptyList())
+    val newReleases = _newReleases.asStateFlow()
+    
     private var searchJob: Job? = null
 
     init {
         viewModelScope.launch { playerConnection.pollPosition() }
         refreshDownloads()
+        loadHomeContent()
+    }
+
+    private fun loadHomeContent() {
+        viewModelScope.launch {
+            try {
+                _trending.value = repository.searchSongs("Trending Music")
+                _newReleases.value = repository.searchSongs("New Releases")
+            } catch (e: Exception) {
+                Log.e("MusicAppViewModel", "Failed to load home content", e)
+            }
+        }
     }
 
     fun refreshDownloads() {
@@ -169,67 +217,116 @@ class MusicAppViewModel @Inject constructor(
 
     fun search(query: String) {
         if (query.isBlank()) {
+            searchJob?.cancel()
+            _searching.value = false
             _searchResults.value = emptyList()
             _artistResults.value = emptyList()
             _albumResults.value = emptyList()
             _playlistResults.value = emptyList()
+            _searchError.value = null
             return
         }
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
+            delay(350)
             _searching.value = true
+            _searchError.value = null
+            _searchResults.value = emptyList()
+            _artistResults.value = emptyList()
+            _albumResults.value = emptyList()
+            _playlistResults.value = emptyList()
             try {
                 _searchResults.value = repository.searchSongs(query)
                 _artistResults.value = repository.searchArtists(query)
                 _albumResults.value = repository.searchAlbums(query)
                 _playlistResults.value = repository.searchPlaylists(query)
+            } catch (exception: kotlinx.coroutines.CancellationException) {
+                throw exception
+            } catch (exception: Exception) {
+                Log.e("MusicAppViewModel", "Search failed for $query", exception)
+                val backendMessage = exception.message?.trim()
+                _searchError.value = when {
+                    backendMessage.isNullOrBlank() -> "Search failed. Check your connection and try again."
+                    backendMessage.contains("404", ignoreCase = true) -> "Search backend is unavailable right now. Please try again later."
+                    backendMessage.contains("502", ignoreCase = true) || backendMessage.contains("503", ignoreCase = true) -> "Search service is unavailable. Please try again in a moment."
+                    backendMessage.length > 160 -> "Search failed. Check your connection and try again."
+                    else -> backendMessage
+                }
             } finally {
                 _searching.value = false
             }
         }
     }
 
+    fun submitSearch(query: String) {
+        viewModelScope.launch { repository.saveSearch(query) }
+        search(query)
+    }
+
     fun play(song: Song, queue: List<Song> = listOf(song)) {
         viewModelScope.launch {
             try {
-                val url = repository.getPlaybackUri(song.id)
-                if (url == null) {
-                    Log.e("MusicAppViewModel", "No playable stream found for ${song.id}")
+                val tracks = queue.takeIf { items -> items.any { it.id == song.id } } ?: listOf(song)
+                val mediaItems = tracks.mapNotNull { track ->
+                    repository.getPlaybackUri(track.id)?.let { mediaItem(track, it) }
+                }
+                val startIndex = mediaItems.indexOfFirst { it.mediaId == song.id }
+                if (startIndex < 0) {
+                    Log.e("MusicAppViewModel", "No playable item found for ${song.id}")
                     return@launch
                 }
-
-                val item = mediaItem(song, url)
                 val player = withTimeoutOrNull(10_000L) { playerConnection.awaitPlayer() }
                 if (player == null) {
                     Log.e("MusicAppViewModel", "Playback service did not connect")
                     return@launch
                 }
 
-                player.setMediaItem(item)
+                player.setMediaItems(mediaItems, startIndex, C.TIME_UNSET)
                 player.prepare()
                 player.play()
 
                 repository.recordPlay(song)
-                launch {
-                    repository.downloadSong(song)
-                    refreshDownloads()
-                }
-
-                val queued = queue.dropWhile { it.id != song.id }.drop(1).mapNotNull { next ->
-                    repository.getPlaybackUri(next.id)?.let { mediaItem(next, it) }
-                }
-                if (queued.isNotEmpty()) player.addMediaItems(queued)
             } catch (error: Throwable) {
                 Log.e("MusicAppViewModel", "Playback tap failed for ${song.id}", error)
             }
         }
     }
 
-    fun togglePlay() { player.value?.let { if (it.isPlaying) it.pause() else it.play() } }
+    fun togglePlay() {
+        player.value?.let { currentPlayer ->
+            if (currentPlayer.isPlaying) {
+                currentPlayer.pause()
+            } else {
+                if (currentPlayer.playbackState == Player.STATE_IDLE || currentPlayer.playbackState == Player.STATE_ENDED) {
+                    currentPlayer.seekToDefaultPosition()
+                    currentPlayer.prepare()
+                }
+                currentPlayer.play()
+            }
+        }
+    }
+
+    fun stop() = playerConnection.stop()
     fun next() { player.value?.seekToNext() }
-    fun previous() { player.value?.seekToPrevious() }
+    fun previous() {
+        player.value?.let { currentPlayer ->
+            when {
+                currentPlayer.currentPosition > 3_000L -> currentPlayer.seekTo(0L)
+                currentPlayer.previousMediaItemIndex != C.INDEX_UNSET -> currentPlayer.seekToPreviousMediaItem()
+                else -> currentPlayer.seekTo(0L)
+            }
+        }
+    }
+    fun playQueueItem(index: Int) = playerConnection.playQueueItem(index)
     fun seek(position: Long) { playerConnection.seekTo(position) }
     fun toggleFavorite(song: Song) { viewModelScope.launch { repository.toggleFavorite(song) } }
+    fun toggleFavoriteById(songId: String?) {
+        songId?.let { id ->
+            (songs.value + favorites.value + searchResults.value + downloads.value)
+                .firstOrNull { it.id == id }
+                ?.let(::toggleFavorite)
+        }
+    }
     fun playNext(song: Song) {
         viewModelScope.launch {
             val url = repository.getPlaybackUri(song.id) ?: return@launch
@@ -262,6 +359,14 @@ class MusicAppViewModel @Inject constructor(
         viewModelScope.launch {
             repository.downloadSong(song)
             refreshDownloads()
+        }
+    }
+
+    fun download(song: Song, onComplete: () -> Unit) {
+        viewModelScope.launch {
+            repository.downloadSong(song)
+            _downloads.value = repository.getDownloadedSongs()
+            onComplete()
         }
     }
     fun saveRemotePlaylist(name: String) {
@@ -319,13 +424,20 @@ fun MusicApp(viewModel: MusicAppViewModel = hiltViewModel()) {
             if (compact) {
                 Column(Modifier.fillMaxSize()) {
                     Box(Modifier.weight(1f).fillMaxWidth()) { content() }
-                    NavigationBar(containerColor = AppBackground) {
+                    NavigationBar(containerColor = AppBackground, contentColor = AppMuted) {
                         for (item in AppSection.values()) {
                             NavigationBarItem(
                                 selected = section == item,
                                 onClick = { section = item },
                                 icon = { SectionIcon(item) },
-                                label = { Text(item.label, fontSize = 11.sp) }
+                                label = { Text(item.label, fontSize = 10.sp) },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = AppAccent,
+                                    selectedTextColor = AppAccent,
+                                    unselectedIconColor = AppMuted,
+                                    unselectedTextColor = AppMuted,
+                                    indicatorColor = Color.Transparent
+                                )
                             )
                         }
                     }
@@ -377,35 +489,85 @@ private fun SectionIcon(item: AppSection) {
 
 @Composable
 private fun DiscoverScreen(viewModel: MusicAppViewModel, onSettingsClick: () -> Unit) {
-    val songs by viewModel.songs.collectAsState()
+    val trending by viewModel.trending.collectAsState()
+    val newReleases by viewModel.newReleases.collectAsState()
     val recent by viewModel.recent.collectAsState()
-    val playlists by viewModel.playlists.collectAsState()
-    val source = (recent + songs).distinctBy(Song::id)
-    LazyColumn(contentPadding = PaddingValues(28.dp, 28.dp, 28.dp, 110.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+    val favorites by viewModel.favorites.collectAsState()
+    
+    LazyColumn(
+        contentPadding = PaddingValues(bottom = 120.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
         item {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                Column(Modifier.weight(1f)) {
-                    Text("Good music,\nno noise.", fontSize = 42.sp, lineHeight = 44.sp, fontWeight = FontWeight.Bold, color = AppInk)
-                    Text("A quiet place for your next favorite song.", color = AppMuted, fontSize = 16.sp, modifier = Modifier.padding(top = 8.dp))
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 24.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Explore", fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, color = AppInk)
+                    IconButton(onClick = onSettingsClick) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = AppInk)
+                    }
                 }
-                IconButton(onClick = onSettingsClick) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = AppMuted)
+                Spacer(Modifier.height(16.dp))
+                CategoryStrip()
+            }
+        }
+
+        if (recent.isNotEmpty()) {
+            item { SectionTitle("Quick picks", "Based on your recent listening") }
+            item {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(recent.take(10)) { song ->
+                        ArtworkCard(song, { viewModel.play(song, recent) })
+                    }
                 }
             }
         }
-        item { CategoryStrip() }
-        item { SectionTitle("Quick picks", "Fresh from your library") }
+
+        item { SectionTitle("Trending Now", "Popular right now") }
         item {
-            if (source.isEmpty()) EmptyState("Your listening story starts here", "Search for a song to fill this space.")
-            else LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                items(source.take(8)) { song -> ArtworkCard(song, { viewModel.play(song, source) }) }
+            if (trending.isEmpty()) {
+                Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = AppAccent)
+                }
+            } else {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(trending) { song ->
+                        ArtworkCard(song, { viewModel.play(song, trending) })
+                    }
+                }
             }
         }
-        item { SectionTitle("Recently played", "Pick up where you left off") }
-        items(recent.take(8)) { song -> SongRow(song, { viewModel.play(song, recent) }, { viewModel.toggleFavorite(song) }, viewModel) }
-        if (playlists.isNotEmpty()) {
-            item { SectionTitle("Your playlists", "Made by you") }
-            item { PlaylistStrip(playlists) }
+
+        item { SectionTitle("New Releases", "Just landed") }
+        item {
+            if (newReleases.isEmpty()) {
+                Box(Modifier.fillMaxWidth().height(180.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = AppAccent)
+                }
+            } else {
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    items(newReleases) { song ->
+                        ArtworkCard(song, { viewModel.play(song, newReleases) })
+                    }
+                }
+            }
+        }
+
+        if (favorites.isNotEmpty()) {
+            item { SectionTitle("Your Favorites", "Your liked songs") }
+            items(favorites.take(5)) { song ->
+                Box(Modifier.padding(horizontal = 20.dp)) {
+                    SongRow(song, { viewModel.play(song, favorites) }, { viewModel.toggleFavorite(song) }, viewModel)
+                }
+            }
         }
     }
 }
@@ -428,17 +590,44 @@ private fun SongsScreen(viewModel: MusicAppViewModel) {
 @Composable
 private fun SearchScreen(viewModel: MusicAppViewModel) {
     var query by remember { mutableStateOf("") }
+    var submittedQuery by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("All") }
+    val searchHistory by viewModel.searchHistory.collectAsState()
     val results by viewModel.searchResults.collectAsState()
     val artistResults by viewModel.artistResults.collectAsState()
     val albumResults by viewModel.albumResults.collectAsState()
     val playlistResults by viewModel.playlistResults.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
     val searching by viewModel.searching.collectAsState()
+    val searchError by viewModel.searchError.collectAsState()
     val matchingPlaylists = playlists.filter { it.name.contains(query, true) }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Search", "Find a song, artist, or album")
-        OutlinedTextField(query, { query = it; viewModel.search(it) }, Modifier.fillMaxWidth().padding(horizontal = 24.dp), singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("What do you want to hear?") })
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it; submittedQuery = ""; viewModel.search("") },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            trailingIcon = {
+                Row {
+                    IconButton(
+                        enabled = query.isNotBlank() && !searching,
+                        onClick = { submittedQuery = query; viewModel.submitSearch(query) }
+                    ) {
+                        Icon(Icons.Default.Search, "Search")
+                    }
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { query = ""; submittedQuery = ""; viewModel.search("") }) {
+                            Icon(Icons.Default.Close, "Clear search")
+                        }
+                    }
+                }
+            },
+            placeholder = { Text("What do you want to hear?") },
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+            keyboardActions = KeyboardActions(onSearch = { submittedQuery = query; viewModel.submitSearch(query) })
+        )
         LazyRow(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(listOf("All", "Songs", "Artists", "Albums", "Playlists")) { option ->
                 FilterChip(selected = filter == option, onClick = { filter = option }, label = { Text(option) })
@@ -446,8 +635,31 @@ private fun SearchScreen(viewModel: MusicAppViewModel) {
         }
         if (searching) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 24.dp), color = AppAccent)
         LazyColumn(contentPadding = PaddingValues(16.dp, 20.dp, 16.dp, 110.dp)) {
-            if (query.isBlank()) item { EmptyState("Search the whole world of music", "Try an artist, mood, language, or song title.") }
-            if (!searching && query.isNotBlank() && results.isEmpty() && artistResults.isEmpty() && albumResults.isEmpty() && matchingPlaylists.isEmpty() && playlistResults.isEmpty()) item { EmptyState("No matches", "Try a different search.") }
+            if (query.isBlank()) {
+                if (searchHistory.isNotEmpty()) {
+                    item { SectionTitle("Recent searches", "Pick up where you left off") }
+                    items(searchHistory, key = { it.query }) { entry ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    query = entry.query
+                                    submittedQuery = entry.query
+                                    viewModel.submitSearch(entry.query)
+                                }
+                                .padding(horizontal = 8.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.History, null, tint = AppMuted)
+                            Text(entry.query, Modifier.padding(start = 12.dp), color = AppInk)
+                        }
+                    }
+                } else {
+                    item { EmptyState("Search the whole world of music", "Try an artist, mood, language, or song title.") }
+                }
+            }
+            if (submittedQuery == query && !searching && searchError != null) item { EmptyState("Search unavailable", searchError!!) }
+            else if (submittedQuery == query && !searching && query.isNotBlank() && results.isEmpty() && artistResults.isEmpty() && albumResults.isEmpty() && matchingPlaylists.isEmpty() && playlistResults.isEmpty()) item { EmptyState("No matches", "Try a different search.") }
             if (filter == "All" || filter == "Artists") {
                 if (artistResults.isNotEmpty()) {
                 item { SectionTitle("Artists", "Matching artists") }
@@ -520,41 +732,193 @@ private fun LibraryScreen(viewModel: MusicAppViewModel) {
 private fun FullPlayer(viewModel: MusicAppViewModel, onClose: () -> Unit) {
     val player by viewModel.player.collectAsState()
     val playing by viewModel.playing.collectAsState()
+    val buffering by viewModel.buffering.collectAsState()
+    val shuffle by viewModel.shuffle.collectAsState()
+    val repeatMode by viewModel.repeatMode.collectAsState()
+    val canGoNext by viewModel.canGoNext.collectAsState()
+    val queue by viewModel.queue.collectAsState()
+    val favorites by viewModel.favorites.collectAsState()
     val position by viewModel.position.collectAsState()
     val duration by viewModel.duration.collectAsState()
-    val item = player?.currentMediaItem
-    Surface(Modifier.fillMaxSize(), color = Color(0xFF17211E)) {
-        Column(Modifier.fillMaxSize().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                IconButton(onClick = onClose) { Icon(Icons.Default.ArrowBack, "Close", tint = Color.White) }
-                Text("NOW PLAYING", color = Color(0xFF9FCFBB), fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.align(Alignment.CenterVertically))
+    val currentSong = player?.currentMediaItem
+    
+    var selectedTab by remember { mutableStateOf(0) }
+    val tabs = listOf("Cover", "Up Next", "Lyrics")
+
+    Surface(Modifier.fillMaxSize(), color = AppBackground) {
+        Column(Modifier.fillMaxSize()) {
+            // Top Bar
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onClose) { Icon(Icons.Default.KeyboardArrowDown, "Close", tint = AppInk, modifier = Modifier.size(32.dp)) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("PLAYING FROM", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = AppMuted, letterSpacing = 1.sp)
+                    Text("Your Mix", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = AppInk)
+                }
+                IconButton(onClick = viewModel::stop, enabled = currentSong != null) {
+                    Icon(Icons.Default.Stop, "Stop", tint = AppInk)
+                }
             }
-            Spacer(Modifier.height(42.dp))
-            AsyncImage(model = item?.mediaMetadata?.artworkUri, contentDescription = null, modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(28.dp)), contentScale = ContentScale.Crop)
-            Column(Modifier.fillMaxWidth().padding(top = 28.dp)) {
-                Text(item?.mediaMetadata?.title?.toString() ?: "Nothing playing", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(item?.mediaMetadata?.artist?.toString() ?: "", color = Color(0xFFA9B8B2), fontSize = 17.sp, modifier = Modifier.padding(top = 6.dp))
+
+            Spacer(Modifier.height(16.dp))
+
+            // Main Content Area (Art or Lyrics or Queue)
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                when (selectedTab) {
+                    0 -> { // Album Art
+                        AsyncImage(
+                            model = currentSong?.mediaMetadata?.artworkUri,
+                            contentDescription = null,
+                            modifier = Modifier
+                                .fillMaxWidth(0.85f)
+                                .aspectRatio(1f)
+                                .clip(RoundedCornerShape(24.dp))
+                                .background(AppSoft),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
+                    1 -> {
+                        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(24.dp)) {
+                            itemsIndexed(queue, key = { _, item -> item.mediaId }) { index, item ->
+                                val active = index == player?.currentMediaItemIndex
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clickable { viewModel.playQueueItem(index) }
+                                        .background(if (active) AppSoft else Color.Transparent)
+                                        .padding(horizontal = 12.dp, vertical = 14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        if (active && playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        tint = if (active) AppAccent else AppMuted
+                                    )
+                                    Column(Modifier.weight(1f).padding(start = 14.dp)) {
+                                        Text(item.mediaMetadata.title?.toString().orEmpty(), color = AppInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(item.mediaMetadata.artist?.toString().orEmpty(), color = AppMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    2 -> {
+                        Text("Lyrics coming soon...", color = AppMuted, fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
             }
-            Spacer(Modifier.height(22.dp))
-            Slider(
-                value = position.toFloat().coerceIn(0f, duration.toFloat().coerceAtLeast(1f)),
-                onValueChange = { viewModel.seek(it.toLong()) },
-                valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
-                modifier = Modifier.fillMaxWidth(),
-                colors = androidx.compose.material3.SliderDefaults.colors(
-                    thumbColor = Color(0xFF9FCFBB),
-                    activeTrackColor = Color(0xFF9FCFBB),
-                    inactiveTrackColor = Color(0xFF40534B)
+
+            // Info & Controls
+            Column(Modifier.fillMaxWidth().padding(horizontal = 28.dp, vertical = 24.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            currentSong?.mediaMetadata?.title?.toString() ?: "Nothing playing",
+                            color = AppInk,
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            currentSong?.mediaMetadata?.artist?.toString() ?: "",
+                            color = AppMuted,
+                            fontSize = 16.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    IconButton(onClick = { viewModel.toggleFavoriteById(currentSong?.mediaId) }, enabled = currentSong != null) {
+                        val liked = favorites.any { it.id == currentSong?.mediaId }
+                        Icon(if (liked) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favorite", tint = if (liked) Color(0xFFC35D67) else AppInk, modifier = Modifier.size(28.dp))
+                    }
+                }
+
+                if (buffering) {
+                    LinearProgressIndicator(
+                        Modifier.fillMaxWidth().padding(top = 12.dp),
+                        color = AppAccent
+                    )
+                    Text("Loading audio...", color = AppMuted, fontSize = 12.sp)
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                Slider(
+                    value = position.toFloat().coerceIn(0f, duration.toFloat().coerceAtLeast(1f)),
+                    onValueChange = { viewModel.seek(it.toLong()) },
+                    valueRange = 0f..duration.toFloat().coerceAtLeast(1f),
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = SliderDefaults.colors(
+                        thumbColor = AppInk,
+                        activeTrackColor = AppInk,
+                        inactiveTrackColor = AppSoft
+                    )
                 )
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(formatTime(position), color = Color(0xFFA9B8B2)); Text(formatTime(duration), color = Color(0xFFA9B8B2)) }
-            Spacer(Modifier.weight(1f))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = viewModel::toggleShuffle) { Icon(Icons.Default.Shuffle, "Shuffle", tint = Color(0xFFA9B8B2)) }
-                IconButton(onClick = viewModel::previous) { Icon(Icons.Default.SkipPrevious, "Previous", tint = Color.White, modifier = Modifier.size(38.dp)) }
-                FilledIconButton(onClick = viewModel::togglePlay, modifier = Modifier.size(76.dp), shape = CircleShape) { Icon(if (playing) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", modifier = Modifier.size(42.dp)) }
-                IconButton(onClick = viewModel::next) { Icon(Icons.Default.SkipNext, "Next", tint = Color.White, modifier = Modifier.size(38.dp)) }
-                IconButton(onClick = viewModel::cycleRepeat) { Icon(Icons.Default.History, "Repeat", tint = Color(0xFFA9B8B2)) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(formatTime(position), color = AppMuted, fontSize = 12.sp)
+                    Text(formatTime(duration), color = AppMuted, fontSize = 12.sp)
+                }
+
+                Spacer(Modifier.height(32.dp))
+
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = viewModel::toggleShuffle, enabled = currentSong != null) {
+                        Icon(Icons.Default.Shuffle, "Shuffle", tint = if (shuffle) AppAccent else AppMuted)
+                    }
+                    IconButton(onClick = viewModel::previous) { Icon(Icons.Default.SkipPrevious, "Previous", tint = AppInk, modifier = Modifier.size(42.dp)) }
+                    
+                    Surface(
+                        onClick = viewModel::togglePlay,
+                        shape = CircleShape,
+                        color = AppInk,
+                        modifier = Modifier.size(72.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                "Play/Pause",
+                                tint = AppBackground,
+                                modifier = Modifier.size(36.dp)
+                            )
+                        }
+                    }
+
+                    IconButton(onClick = viewModel::next, enabled = canGoNext) {
+                        Icon(Icons.Default.SkipNext, "Next", tint = if (canGoNext) AppInk else AppMuted, modifier = Modifier.size(42.dp))
+                    }
+                    IconButton(onClick = viewModel::cycleRepeat, enabled = currentSong != null) {
+                        Icon(Icons.Default.Repeat, "Repeat", tint = if (repeatMode == Player.REPEAT_MODE_OFF) AppMuted else AppAccent)
+                    }
+                }
+
+                Spacer(Modifier.height(40.dp))
+
+                // Tabs
+                ScrollableTabRow(
+                    selectedTabIndex = selectedTab,
+                    containerColor = Color.Transparent,
+                    contentColor = AppInk,
+                    edgePadding = 0.dp,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.Indicator(
+                            Modifier.tabIndicatorOffset(tabPositions[selectedTab]),
+                            color = AppInk,
+                            height = 2.dp
+                        )
+                    },
+                    divider = {}
+                ) {
+                    tabs.forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = { Text(title, fontSize = 14.sp, fontWeight = FontWeight.Bold) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -563,11 +927,48 @@ private fun FullPlayer(viewModel: MusicAppViewModel, onClose: () -> Unit) {
 @Composable
 private fun MiniPlayer(player: Player?, onOpen: () -> Unit, onPlayPause: () -> Unit, modifier: Modifier = Modifier) {
     val item = player?.currentMediaItem ?: return
-    Card(modifier.fillMaxWidth().padding(12.dp).clickable(onClick = onOpen), colors = CardDefaults.cardColors(containerColor = Color(0xFF20332D)), shape = RoundedCornerShape(18.dp)) {
-        Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AsyncImage(model = item.mediaMetadata.artworkUri, contentDescription = null, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)), contentScale = ContentScale.Crop)
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) { Text(item.mediaMetadata.title?.toString().orEmpty(), color = Color.White, maxLines = 1); Text(item.mediaMetadata.artist?.toString().orEmpty(), color = Color(0xFFA9B8B2), maxLines = 1, fontSize = 12.sp) }
-            IconButton(onClick = onPlayPause) { Icon(if (player.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, "Play", tint = Color.White) }
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .height(64.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(onClick = onOpen),
+        color = AppSoft,
+        tonalElevation = 8.dp
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+            AsyncImage(
+                model = item.mediaMetadata.artworkUri,
+                contentDescription = null,
+                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)),
+                contentScale = ContentScale.Crop
+            )
+            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                Text(
+                    item.mediaMetadata.title?.toString().orEmpty(),
+                    color = AppInk,
+                    maxLines = 1,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    item.mediaMetadata.artist?.toString().orEmpty(),
+                    color = AppMuted,
+                    maxLines = 1,
+                    fontSize = 13.sp,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            IconButton(onClick = onPlayPause) {
+                Icon(
+                    if (player.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    "Play",
+                    tint = AppInk,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
         }
     }
 }
@@ -621,7 +1022,7 @@ private fun SongActionsDialog(song: Song, viewModel: MusicAppViewModel, onDismis
                 item { ActionRow(Icons.Default.Person, "More from ${song.artist}") { viewModel.search(song.artist); onDismiss() } }
                 item { ActionRow(Icons.Default.OpenInNew, "Watch on YouTube") { openExternal(context, "https://www.youtube.com/watch?v=${song.id}"); onDismiss() } }
                 item { ActionRow(Icons.Default.OpenInNew, "Open in YouTube Music") { openExternal(context, "https://music.youtube.com/watch?v=${song.id}"); onDismiss() } }
-                item { ActionRow(Icons.Default.Download, "Pre-cache") { viewModel.download(song); onDismiss() } }
+                item { ActionRow(Icons.Default.Download, "Download for offline") { viewModel.download(song); onDismiss() } }
                 item { ActionRow(Icons.Default.Share, "Share") { shareSong(context, song); onDismiss() } }
             }
         }
@@ -649,7 +1050,41 @@ private fun shareSong(context: android.content.Context, song: Song) {
 
 @Composable
 private fun ArtworkCard(song: Song, onClick: () -> Unit) {
-    Column(Modifier.width(148.dp).clickable(onClick = onClick)) { AsyncImage(model = song.thumbnailUrl, contentDescription = null, modifier = Modifier.size(148.dp).clip(RoundedCornerShape(18.dp)), contentScale = ContentScale.Crop); Text(song.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp)); Text(song.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, color = AppMuted, fontSize = 13.sp) }
+    Column(
+        Modifier
+            .width(160.dp)
+            .clickable(
+                onClick = onClick,
+                indication = null,
+                interactionSource = remember { MutableInteractionSource() }
+            )
+    ) {
+        AsyncImage(
+            model = song.thumbnailUrl,
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(160.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(AppSoft)
+        )
+        Text(
+            song.title,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            fontWeight = FontWeight.Bold,
+            fontSize = 14.sp,
+            color = AppInk,
+            modifier = Modifier.padding(top = 8.dp)
+        )
+        Text(
+            song.artist,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = AppMuted,
+            fontSize = 12.sp
+        )
+    }
 }
 
 @Composable
@@ -704,20 +1139,37 @@ private fun PlaylistTile(playlist: Playlist, modifier: Modifier = Modifier) { Ca
 @Composable
 private fun LibraryTile(title: String, subtitle: String, icon: androidx.compose.ui.graphics.vector.ImageVector, tint: Color) { Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(16.dp)) { Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) { Icon(icon, null, tint = tint, modifier = Modifier.size(30.dp)); Column(Modifier.padding(start = 14.dp)) { Text(title, fontWeight = FontWeight.Bold); Text(subtitle, color = AppMuted, fontSize = 13.sp) } } } }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CategoryStrip() {
-    val labels = listOf("Fresh", "Chill", "Focus", "Workout", "Urdu", "Hindi")
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+    val labels = listOf("All", "Songs", "Videos", "Artists", "Playlists")
+    var selected by remember { mutableStateOf("All") }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         items(labels) { label ->
-            Card(colors = CardDefaults.cardColors(containerColor = Color.White), shape = RoundedCornerShape(50.dp)) {
-                Text(label, modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp), color = AppAccent, fontWeight = FontWeight.SemiBold)
-            }
+            FilterChip(
+                selected = selected == label,
+                onClick = { selected = label },
+                label = { Text(label) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = AppAccent,
+                    selectedLabelColor = AppBackground,
+                    containerColor = AppSoft,
+                    labelColor = AppInk
+                ),
+                border = null,
+                shape = CircleShape
+            )
         }
     }
 }
 
 @Composable
-private fun SectionTitle(title: String, subtitle: String) { Column { Text(title, fontSize = 22.sp, fontWeight = FontWeight.Bold, color = AppInk); Text(subtitle, color = AppMuted, fontSize = 14.sp, modifier = Modifier.padding(top = 3.dp)) } }
+private fun SectionTitle(title: String, subtitle: String) {
+    Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+        Text(title, fontSize = 20.sp, fontWeight = FontWeight.ExtraBold, color = AppInk)
+        Text(subtitle, color = AppMuted, fontSize = 13.sp)
+    }
+}
 
 @Composable
 private fun ScreenHeader(title: String, subtitle: String) { Column(Modifier.padding(28.dp, 28.dp, 24.dp, 14.dp)) { Text(title, fontSize = 38.sp, fontWeight = FontWeight.Bold, color = AppInk); Text(subtitle, color = AppMuted, modifier = Modifier.padding(top = 5.dp)) } }

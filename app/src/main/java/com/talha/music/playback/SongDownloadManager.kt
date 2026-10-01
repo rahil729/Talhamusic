@@ -10,6 +10,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -30,13 +31,16 @@ class SongDownloadManager @Inject constructor(
         return try {
             withContext(Dispatchers.IO) {
                 val request = Request.Builder().url(streamUrl).build()
+                val downloadClient = httpClient.newBuilder()
+                    .readTimeout(120, TimeUnit.SECONDS)
+                    .build()
                 val outputFile = fileFor(song.id)
                 val temporaryFile = File(outputFile.parentFile, "${outputFile.name}.part")
 
                 repeat(3) { attempt ->
                     val completed = runCatching {
                         temporaryFile.delete()
-                        httpClient.newCall(request).execute().use { response ->
+                        downloadClient.newCall(request).execute().use { response ->
                             if (!response.isSuccessful) return@runCatching false
                             val body = response.body ?: return@runCatching false
                             body.byteStream().use { input ->

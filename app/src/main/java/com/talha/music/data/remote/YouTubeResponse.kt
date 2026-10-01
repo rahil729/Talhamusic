@@ -16,7 +16,8 @@ data class YouTubeClient(
     val androidSdkVersion: Int = 30,
     val hl: String = "en",
     val gl: String = "US",
-    val visitorData: String? = null
+    val visitorData: String? = null,
+    val userAgent: String? = null
 )
 
 data class ServiceIntegrityDimensions(

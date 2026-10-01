@@ -70,14 +70,13 @@ class MusicRepositoryImpl @Inject constructor(
 
     override suspend fun resolveYouTubeUrl(url: String): Song? {
         val videoId = extractVideoId(url) ?: return null
-        val response = innerTubeService.getStreamDetails(videoId) ?: return null
         return Song(
             id = videoId,
-            title = response.title ?: "YouTube video",
-            artist = response.uploader ?: "YouTube",
+            title = "YouTube video",
+            artist = "YouTube",
             album = null,
-            durationText = response.duration?.let(::formatDuration),
-            thumbnailUrl = response.thumbnailUrl,
+            durationText = null,
+            thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
             isFavorite = songDao.getSong(videoId)?.isFavorite == true
         )
     }
