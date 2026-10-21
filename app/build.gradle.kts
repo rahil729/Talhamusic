@@ -25,7 +25,7 @@ android {
         minSdk = 24
         targetSdk = 37
 
-        versionCode = System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: 25
+        versionCode = System.getenv("ANDROID_VERSION_CODE")?.toIntOrNull() ?: 26
         versionName = project.version.toString()
 
         multiDexEnabled = true
@@ -64,14 +64,13 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-DEBUG"
-            manifestPlaceholders["appName"] = "Talha Music Debug"
+            manifestPlaceholders["appName"] = "Talha Rahil"
         }
 
         release {
-            versionNameSuffix = "-RELEASE"
             isMinifyEnabled = true
             isShrinkResources = true
-            manifestPlaceholders["appName"] = "Talha Music"
+            manifestPlaceholders["appName"] = "Talha Rahil"
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -84,7 +83,7 @@ android {
 
             applicationIdSuffix = ".nightly"
             versionNameSuffix = "-NIGHTLY"
-            manifestPlaceholders["appName"] = "Talha Music Nightly"
+            manifestPlaceholders["appName"] = "Talha Rahil"
             signingConfig = signingConfigs.findByName("ci")
         }
     }
