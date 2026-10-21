@@ -1,0 +1,48 @@
+name: Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "talha-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: gradle
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build tools
+        run: sdkmanager "platforms;android-37" "ndk;29.0.14206865" "cmake;4.1.2"
+
+      - name: Build universal APK
+        run: ./gradlew :app:assembleDebug --no-daemon
+
+      - name: Publish APK release
+        if: startsWith(github.ref, 'refs/tags/talha-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Talha Music ${{ github.ref_name }}
+          generate_release_notes: true
+          files: app/build/outputs/apk/debug/*-universal-debug.apk
+
+      - name: Upload APK build artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/talha-v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: talha-music-apk
+          path: app/build/outputs/apk/debug/*-universal-debug.apk
