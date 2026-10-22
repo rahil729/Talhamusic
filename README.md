@@ -15,10 +15,26 @@ rounded media cards, and left-side navigation.
 
 ## Download
 
-Download `Talha-Rahil.apk` from the
-[latest Talha Rahil release](https://github.com/rahil729/Talhamusic/releases/latest).
-On Android, open the downloaded APK and follow the installation prompts. Android
-may ask you to allow installation from your browser or file manager.
+Download the latest
+[Talha-Rahil.apk](https://github.com/rahil729/Talhamusic/releases/latest/download/Talha-Rahil.apk)
+directly, or browse [all Talha Rahil releases](https://github.com/rahil729/Talhamusic/releases/latest).
+On Android, open the APK and follow the installation prompts. Android may ask
+you to allow installation from your browser or file manager.
+
+## Project website
+
+The project website is published with GitHub Pages at
+https://rahil729.github.io/Talhamusic/. It describes the app and provides a
+direct APK download. The repository root contains the website source,
+`robots.txt`, and `sitemap.xml`.
+
+## Find the website on Google
+
+After the site is published, add its URL as a URL-prefix property in
+[Google Search Console](https://search.google.com/search-console/), verify
+ownership, submit `sitemap.xml`, and request indexing for the homepage. Google
+decides whether and when to index the site and where it ranks; submission does
+not guarantee a particular search position.
 
 ## Build
 

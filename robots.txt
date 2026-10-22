@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://rahil729.github.io/Talhamusic/sitemap.xml
