@@ -46,8 +46,12 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Talha Rahil ${{ github.ref_name }}
-          generate_release_notes: true
+          name: Talha Music ${{ github.ref_name }}
+          body: |
+            ### Talha Music release ${{ github.ref_name }}
+            - Independent Android music player created by Talha.
+            - YouTube Music streaming, local audio playback, background playback, and offline caching.
+            - Licensed under the MIT License.
           files: app/build/outputs/apk/debug/Talha-Rahil.apk
 
       - name: Upload APK build artifact
