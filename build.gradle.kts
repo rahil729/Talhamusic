@@ -34,7 +34,7 @@ allprojects {
     }
 
     tasks.withType<Detekt>().configureEach {
-        jvmTarget = "25"
+        jvmTarget = "21"
         reports {
             html.required = true
         }
@@ -47,5 +47,5 @@ allprojects {
 }
 
 tasks.named<UpdateDaemonJvm>("updateDaemonJvm") {
-    languageVersion = JavaLanguageVersion.of(25)
+    languageVersion = JavaLanguageVersion.of(21)
 }
